@@ -1,0 +1,159 @@
+---
+tittle: "Clustering and kNN exercises"
+format: html
+---
+
+## Exercises
+
+1.  Load the `tissue_gene_expression` dataset. Remove the row means and compute the distance between each observation. Store the result in `d`.
+
+```{r}
+library(dslabs)
+library(pheatmap)
+library(caret)
+
+tissue_expression <- tissue_gene_expression
+x <- tissue_expression$x
+y <- tissue_expression$y
+
+row_mean_x <- apply(x, 1, mean)
+x_subtracted <- sweep(x, 1, FUN = "-", row_mean_x)
+#sweep(tissue_expression$x, 1, rowMeans(tissue_expression$x))
+
+d <- dist(x_subtracted)
+
+```
+
+
+
+2.  Make a hierarchical clustering plot and add the tissue types as labels.
+```{r}
+
+h <- hclust(d)
+class(h)
+plot(h, labels = y, cex = 0.5)
+
+```
+
+3.  Run a k-means clustering on the data with $K=7$. Make a table comparing the identified clusters to the actual tissue types.
+```{r}
+set.seed(2024 - 04 - 13)
+k_cluster <- kmeans(x_subtracted, 7)
+
+table(k_cluster$cluster, y)
+
+```
+
+4.  Run the algorithm in problem 3 several times to see how the answer changes.
+```{r}
+set.seed(2024 - 04 - 13)
+for (i in seq(1,10)) {
+  k_cluster <- kmeans(x_subtracted, 7)
+  print(table(k_cluster$cluster, y))
+}
+
+```
+
+5.  Select the 50 most variable genes. Make a heatmap of these observations. Make sure the observations show up in the columns, that the predictors are centered, and add a color bar to show the different tissue types. Hint: use the `ColSideColors` argument to assign colors. Also, use `col = RColorBrewer::brewer.pal(11, "RdBu")` for a better use of colors.
+```{r}
+ #I loaded this package because I had problem with the heatmap() function.
+#The heatmap() function didn't show all 50 genes and just plotted part of the observations. So I decided to use other approach. 
+
+tissue_name <- data.frame(tissue_expression$y)
+rownames(tissue_name) <- rownames(x_subtracted)
+
+top_var_genes <- sort(apply(x_subtracted, 2, var), decreasing = T)[1:50]
+
+pheatmap(t(x_subtracted[1:189,names(top_var_genes)]), col = RColorBrewer::brewer.pal(11, "RdBu"),
+         annotation_col = tissue_name, show_colnames = F)
+
+```
+
+6.  Divide the `tissue_gene_expression` into training and testing so that that 80% is in training. Make sure each tissue appears at least once in the test set.
+```{r}
+set.seed(2024 - 04 - 13)
+
+x <- tissue_expression$x
+y <- tissue_expression$y
+
+idx <- createDataPartition(y, times = 1, p = 0.8, list = FALSE)
+
+
+x_train <- x[idx, ]
+y_train <- y[idx]
+summary(y_train)
+
+x_test <- x[-idx, ]
+y_test <- y[-idx]
+summary(y_test)
+
+```
+
+7.  Run kNN algorithm with $k=1$ and compare the accuracy on training set and test set.
+```{r}
+set.seed(2024 - 04 - 13)
+
+fit <- knn3(x_train, y_train, k = 1)
+y_hat <- predict(fit, newdata = x_test, type = "class")
+
+mean(y_hat == y_test)
+
+
+```
+
+8.  Repeat 7 for $k=1,3,5,7,9$. Which $k$ works best?
+```{r}
+set.seed(2024 - 04 - 13)
+
+
+for (k in c(1, 3, 5, 7, 9)) {
+  fit <- knn3(x_train, y_train, k = k)
+  y_hat <- predict(fit, newdata = x_test, type = "class")
+  print(mean(y_hat == y_test))
+}
+
+
+```
+
+9.  Repeat 7 but for 5 different random splits as you did in 6. Show the variability in accuracy in a accuracy versus $k$ plot.
+```{r}
+
+set.seed(2024 - 04 - 14)
+
+
+ks <- seq(1:10) #values of K
+
+acc <- matrix(NA, nrow = 5, ncol = length(ks)) #Empty matrix to store accuracy values
+
+for (i in 1:5) {
+  
+  idx <- createDataPartition(y, times = 1, p = 0.8, list = FALSE)
+  
+  x_train <- x[idx, ]
+  y_train <- y[idx]
+  data <- data.frame(x = x_train, y = y_train)
+  
+  x_test <- x[-idx, ]
+  y_test <- y[-idx]
+
+  mse <- sapply(ks, function(k) {
+    fit <- knn3(y ~ ., k = k, data = data)
+    y_hat <- predict(fit, newdata = data.frame(x = x_test), type = "class")
+    mean(y_hat == y_test)
+  })
+  
+  acc[i,] <- mse
+}
+
+print(acc)
+
+plot(ks, colMeans(acc), type = "b", ylim =c(0.85,1), 
+     xlab = "k", ylab = "Accuracy", 
+     main = "Accuracy versus k with 5 random splits")
+
+apply(acc, 1, function(row) lines(ks, row, col = "gray"))
+
+legend("bottomright", legend = c("Mean Accuracy", "Splits"), 
+       col = c("black", "gray"))
+```
+

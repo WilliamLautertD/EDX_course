@@ -1,0 +1,196 @@
+---
+title: "Using PCA in machine learning"
+format: html
+editor: visual
+---
+
+For these exercises we will use the MNIST dataset:
+
+```{r}
+library(dslabs)
+mnist <- read_mnist()
+set.seed(1990)
+
+index <- sample(nrow(mnist$train$images), 10000)
+x <- mnist$train$images[index,]
+y <- factor(mnist$train$labels[index])
+
+index <- sample(nrow(mnist$test$images), 1000)
+x_test <- mnist$test$images[index,]
+y_test <- factor(mnist$test$labels[index])
+```
+
+and use parallelization
+
+```{r}
+library(parallel)
+library(doParallel)
+library(foreach)
+nc <- detectCores()  - 1
+cl <- makeCluster(nc) # convention to leave 1 core for OS
+registerDoParallel(cl)
+```
+
+1.  As we showed in lecture, use the following preprocessing
+
+```{r}
+library(caret)
+nzv <- nearZeroVar(x)
+colnames(x) <- 1:ncol(x)
+colnames(x_test) <- colnames(x)
+
+col_index <- setdiff(1:ncol(x), nzv)
+
+
+```
+
+Use cross-validation to pick between $k=1,3,5$ and report the accuracy of the best model on the test set. Optional: use the \`foreach\` package to parallelize and speed up the prediction step.
+
+```{r}
+set.seed(2024-04-20)
+
+k_values <- data.frame(k = c(1,3,5))
+
+control <- trainControl(method = "cv", number = 20, p = .9, allowParallel = T)
+
+train_knn <- train(x = x[, col_index], y = y, 
+                   method = "knn", 
+                   tuneGrid = k_values, 
+                   trControl = control)
+
+fit_knn <- knn3(x[, col_index], y,  k = train_knn$bestTune$k)
+
+y_hat_knn <- predict(fit_knn, x_test[, col_index], type = "class")
+
+confusionMatrix(y_hat_knn, factor(y_test))$overall["Accuracy"]
+
+paste("The best K is:", train_knn$bestTune$k)
+paste("The accuracy for the best model on the test set is:", confusionMatrix(y_hat_knn, factor(y_test))$overall["Accuracy"])
+```
+
+2.  Compute the correlation between the middle between the feature 197 and the one below, 225. Comment on how much extra information included 225 provides if we already used 197 to predict.
+
+```{r}
+correlation <- cor(x[, col_index][, 197], x[, col_index][, 225])
+
+paste("The correlation is:", correlation)
+
+print("The correlation between the two features is low, which suggest that feature 225 is not correlated with feature 197. This indicate that the features are independent and including both in the model may provide additional information for prediction and improve the model performance.")
+```
+
+3.  Knowing that there is strong correlation between some feature, we can use PCA to reduce the number features we need to represent all the information. Go back to the original features: no preprocessing and perform PCA on the features. Do not center the features and compute only the top 100 PCs.
+
+    ```{r}
+    set.seed(2024-04-21)
+
+    pca <- prcomp(mnist$train$images[index,], center = FALSE, rank. = 100)
+    ```
+
+4.  Determine how many PCs you need to explain 75% of the variability in the features. Call this number $p$.
+
+    ```{r}
+
+    var_explained <- pca$sdev^2 / sum(pca$sdev^2)
+    cum_var_explained <- cumsum(var_explained)
+
+    p <- which.max(cum_var_explained >= 0.75)
+
+    plot(pca$sdev^2/sum(pca$sdev^2),  xlim = c(1,100), 
+         xlab = "PC", 
+         ylab = "Variance explained")
+
+    abline(v = p) #add vertival line showing the PC value that accumulates 75% of the variability
+
+    paste("The number of PCs to explain 75% of the variability in the features are:", p)
+
+    ```
+
+5.  Train a kNN on the first $K$ PCAs of the features instead of the features. Use re-sampling to estimate accuracy and chose the best number of neighbors $k$. Optional: use paralleziation to speed up the training process.
+
+    ```{r}
+    set.seed(2024-04-21)
+
+
+    index <- sample(nrow(mnist$train$images), 10000)
+    x <- mnist$train$images[index,]
+    y <- factor(mnist$train$labels[index])
+
+    index <- sample(nrow(mnist$test$images), 1000)
+    x_test <- mnist$test$images[index,]
+    y_test <- factor(mnist$test$labels[index])
+
+
+
+    #PC analysis 
+    col_means <- colMeans(x)
+    pca <- prcomp(sweep(x, 2, col_means), center = FALSE, rank. = 100)
+
+    #Tunning parameters and CV 
+    K <- 20
+
+    k_values <- data.frame(k = seq(3, K, 2))
+
+    control <- trainControl(method = "cv", number = 20, p = .9, allowParallel = T)
+
+    #Fit kNN model
+    train_knn_pca <- train(pca$x[,1:K], y = y, method = "knn",
+                           tuneGrid = k_values,
+                           trControl = control)
+
+    fit_knn <- knn3(pca$x[,1:K], y = y,  
+                    k = train_knn_pca$bestTune$k)
+
+    #REMEMBER
+    #Apply the transformation to training set after finding the PCs and any summary of the data unsing training set. Transformation necessary to predict to run: reduce the dimension, rotation
+
+    y_hat_knn <- predict(fit_knn, sweep(x_test, 2, col_means) %*% pca$rotation[, 1:K], type = "class")
+
+    #Final check 
+    confusionMatrix(y_hat_knn, factor(y_test))$overall["Accuracy"]
+
+    paste("The best K for kNN analysis using the first 20 PCAs is:", train_knn_pca$bestTune$k)
+    paste("The accuracy for the best model on the test set is:", confusionMatrix(y_hat_knn, factor(y_test))$overall["Accuracy"])
+    ```
+
+6.  When using `train` above we are violating one of our golden rules of machine learning: when picking $k$ performing PCA on the entire set rather than just the train set. We have also been breaking the rule by applying `nearZeroVar` function to the entire training set. Read the **caret** package [documentation](https://topepo.github.io/caret/pre-processing.html) to learn how we can apply PCA correctly in the `train` function. Hint: you will use the `train` function arguments `preProcess` and `trControl` and the `trainControl` function and `preProcOptions` argument within it.
+
+    ```{r}
+    set.seed(2023-04-21)
+
+    index <- sample(nrow(mnist$train$images), 10000)
+    x <- mnist$train$images[index,]
+    y <- factor(mnist$train$labels[index])
+
+    index <- sample(nrow(mnist$test$images), 1000)
+    x_test <- mnist$test$images[index,]
+    y_test <- factor(mnist$test$labels[index])
+    colnames(x) <- 1:ncol(x)
+    colnames(x_test) <- colnames(x)
+
+    K <- 20
+
+    k_values <- data.frame(k = seq(3, K, 2))
+
+    pre_process <- preProcess(x, method = c("pca", "nzv"), 
+                              thresh = 0.75, 
+                              pcaComp = 100)
+
+    pre_process
+
+    control <- trainControl(method = "cv", number = 20, p = .9, allowParallel = TRUE)
+
+    train_knn_pca <- train(predict(pre_process, x), y = y, method = "knn",
+                           tuneGrid = k_values,
+                           trControl = control)
+
+    y_hat_knn <- predict(train_knn_pca, newdata = predict(pre_process, x_test))
+
+    confusionMatrix(y_hat_knn, factor(y_test))
+    ```
+
+Before exiting R run the following commands.
+
+```{r}
+stopCluster(cl)
+stopImplicitCluster()
+```

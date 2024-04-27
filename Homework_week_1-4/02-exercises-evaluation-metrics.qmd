@@ -1,0 +1,354 @@
+---
+title: "Evaluation metrics"
+format: html
+---
+
+To introduce the main concepts and ideas, we are starting with a boring and simple example. Real machine learning challenges are very rarely this simple. Specifically, we are going to build an algorithm that predicts sex based on height. We use the following predictor and outcome:
+
+```{r}
+library(dslabs)
+x <- heights$height
+y <- heights$sex
+```
+
+1.  Write a function that for any $x$ returns a random guess of `Male` and `Females`. The function should take a vector and return random guesses of the same length.
+
+```{r}
+guess <- function(x) sample(factor(c("Female", "Male")), length(x), replace = TRUE)
+```
+
+2.  Apply the function to our predictor $x$ and compute the accuracy defined as the percent of times the correct $y$ is guessed.
+
+```{r}
+y_hat <- guess(x)
+mean(y_hat == y)
+```
+
+3.  Write a new function, call it `cutoff` that predicts $y$ based on $x>\theta$. Make $\theta$ and argument in the function. Then pick a $\theta$ a report the accuracy for that $c$.
+
+```{r}
+cutoff <- function(x, theta){
+  factor(c("Female", "Male"))[as.numeric(x > theta) + 1]
+}
+y_hat <- cutoff(x, 66)
+mean(y_hat == y)
+```
+
+4.  Run the function `cutoff` for values of $\theta$ ranging from 60 to 70 and plot accuracy versus $\theta$. Report the value of $\theta$ that maximizes accuracy.
+
+```{r}
+thetas <- seq(60, 70, 0.5)
+acc <- sapply(thetas, function(theta){
+   y_hat <- cutoff(x, theta)
+   mean(y_hat == y)
+})
+plot(thetas, acc, type = "l")
+thetas[which.max(acc)]
+```
+
+5.  Does this cutoff make sense? Also does it make sense that while higher cutoff values of $\theta$ lower accuracy substantially, accuracy levels off at around 0.75 for lower values. Why is this happening? To help answer this question, repeat exercise 4 but show accuracy for males and females separately.
+
+```{r}
+acc <- sapply(thetas, function(theta){
+   y_hat <- cutoff(x, theta)
+   c(mean(y_hat[y == "Female"] == "Female"),
+     mean(y_hat[y == "Male"] == "Male"))
+})
+matplot(thetas, t(acc), type = "l")
+## Notice the prevalence
+mean(y == "Male")
+```
+
+6.  Now split the data into two in the following way:
+
+```{r}
+set.seed(2024 - 02 - 12)
+test_index <- sample(nrow(heights), round(nrow(heights)/2))
+test_set <- heights[test_index, ] 
+train_set <- heights[-test_index, ] 
+```
+
+Redo exercise 4 to pick the cutoff that maximizes accuracy on `train_set` then compute accuracy using that same cutoff to predict for `test_set`. Which one is large? Think about why that might be.
+
+```{r}
+#Training set
+x <- train_set$height
+y <- train_set$sex
+
+thetas <- seq(60, 70, 0.5)
+acc <- sapply(thetas, function(theta){
+   y_hat <- cutoff(x, theta)
+   mean(y_hat == y)
+})
+mean(y_hat == y)
+plot(thetas, acc, type = "l", main = "Training")
+thetas[which.max(acc)]
+
+#Test set
+x <- test_set$height
+y <- test_set$sex
+
+y_hat <- cutoff(x, thetas[which.max(acc)])
+mean(y_hat == y)
+
+#The test set shows higher accuracy. This might be because we are not considereing accuracy for males and females separately, as indicated in Figure from exercise 5. In that figure, we noticed that the accuracy is different when the groups are separated. For example, considering the value from 'thetas[which.max(acc)' (64), the accuracy value is around .50 for males and .85 for females.
+```
+
+7.  Use the `caret` package to split the heights dataset into training and testing sets. Use 50% of the data to train.
+
+```{r}
+set.seed(2024 - 04 - 6)
+
+library(caret)
+
+x <- heights$height
+y <- heights$sex
+
+text_idx <- createDataPartition(y, times = 1, p = 0.5, list = FALSE)
+
+training_set <- heights[text_idx,]
+test_set <- heights[-text_idx,]
+
+str(training_set)
+str(test_set)
+```
+
+8.  Use the `glm` function to fit a logistic regression model to the training set. Then use the `predict.glm` function obtain an estimate of $\hat{\text{Pr}}(Y=1|X=x)$ for the $x$ in the test set. Logistic regression will provide an estimate of $\hat{\text{Pr}}(Y=1\mid X=x)$. Plot $\hat{\text{Pr}}(Y=1\mid X=x)$ versus $x$. We will use the **caret** package default of defining the first level of $Y$ as a 1, so $Y=1$ implies female.
+
+```{r}
+
+glm_training <- glm(factor(sex) ~ height, 
+                    data = training_set,
+                    family = binomial)
+
+glm_pred <- predict.glm(glm_training, newdata = test_set, type = "response")
+
+plot(test_set$height, glm_pred)
+glm_training
+```
+
+9.  Use a cuto\$ff of $\theta = 0.5$ to produce predictions $\hat{y}$ by defining $\hat{y}=1$ if $\hat{\Pr}(Y=1\mid X=x) < \theta$. Then use the `caret` package to obtain sensitivity, specificity, and prevalence.
+
+```{r}
+theta <- 0.5
+
+pred_y <- factor(ifelse(glm_pred < theta, "Female", "Male"), levels = c("Female", "Male"))
+
+levels(pred_y)
+levels(test_set$sex)
+#levels(test_set$sex) <- c(1, 0)
+
+cm <- confusionMatrix(data = pred_y, 
+                      reference = test_set$sex, 
+                      positive = "Female")
+
+cm
+
+```
+
+\
+
+10. Find the cutoff that maximizes accuracy.
+
+```{r}
+
+thetas <- seq(0.1, 0.95, 0.05)
+
+acc <- sapply(thetas, function(theta){
+   pred_y <- factor(ifelse(glm_pred < theta, "Female", "Male"), levels = c("Female", "Male"))
+   cm <- confusionMatrix(data = pred_y, 
+                        reference = test_set$sex, 
+                        positive = "Female")
+   cm$overall["Accuracy"]
+})
+
+thetas[which.max(acc)]
+plot(thetas, acc, type = "l", main = "Accuracy")
+
+```
+
+11. Repeat exercise 10 but show sensitivity and specificity and which cutoff maximizes each.
+
+```{r}
+
+thetas <- seq(0.1, 0.95, 0.05)
+
+#Acc Sensitivity
+acc <- sapply(thetas, function(theta){
+   pred_y <- factor(ifelse(glm_pred < theta, "Female", "Male"), levels = c("Female", "Male"))
+   cm <- confusionMatrix(data = pred_y, 
+                        reference = test_set$sex, 
+                        positive = "Female")
+   cm$byClass["Sensitivity"]
+})
+
+paste("Theta that maximizes Sensitivity is: ", thetas[which.max(acc)])
+plot(thetas, acc, type = "l", main = "Acc. Sensitivity")
+
+
+#Acc Specificity
+acc <- sapply(thetas, function(theta){
+   pred_y <- factor(ifelse(glm_pred < theta, "Female", "Male"), levels = c("Female", "Male"))
+   cm <- confusionMatrix(data = pred_y, 
+                        reference = test_set$sex, 
+                        positive = "Female")
+   cm$byClass["Specificity"]
+})
+paste("Theta that maximizes Specificity is: ", thetas[which.max(acc)])
+plot(thetas, acc, type = "l", main = "Acc. Specificity")
+
+```
+
+12. Use $F1$ to pick a cutoff instead of overall accuracy.
+
+```{r}
+
+cut <- seq(60, 80)
+levels(training_set$sex) <- c(1, 0)
+
+F_1 <- sapply(cut, function(cut){
+   pred_y <- factor(ifelse(training_set$height < cut, 1, 0), levels = c(1, 0))
+   Fm <- F_meas(data = pred_y, 
+                        reference = training_set$sex)
+})
+
+plot(cut, F_1, type = "l", main = "F_1 (F_means)")
+
+F_1
+paste("The cutoff which maximizes F_1 is:", cut[which.max(F_1)])
+```
+
+13. Repeat the splitting of the data into halves 100 times. Plot the 250 F1 versus cutoff plots.
+
+```{r}
+
+set.seed(2024 - 04 - 7)
+x <- heights$height
+y <- heights$sex
+
+#text_idx <- createDataPartition(y, times = 250, list = FALSE)
+
+#training_set_13 <- heights[text_idx,]
+#test_set_13 <- heights[-text_idx,]
+
+# str(training_set_13)
+# str(test_set_13)
+# 
+# cut <- seq(60, 80)
+# 
+# 
+# F_1 <- sapply(cut, function(cut){
+#    pred_y <- factor(ifelse(training_set_13$height < cut, "Female", "Male"), 
+#                     levels = c("Female", "Male"))
+#    Fm <- F_meas(data = pred_y, 
+#                         reference = training_set_13$sex)
+# })
+# 
+# plot(cut, F_1, type = "l", main = "F_1 (F_means)")
+# 
+# F_1
+# paste("The cutoff which maximizes F_1 is:", cut[which.max(F_1)])
+
+training_halves <- 1:250
+cut <- seq(60, 80)
+
+F1_values <- matrix(nrow = length(cut), ncol = length(training_halves))
+optimal_cutoffs <- seq(250)
+
+
+for (i in training_halves) {
+  text_idx <- createDataPartition(y, times = 1, p = 0.5, list = FALSE)
+  training_set_13 <- heights[text_idx,]
+  test_set_13 <- heights[-text_idx,]
+  
+  F1 <- sapply(cut, function(cut) {
+    pred_y <- factor(ifelse(training_set_13$height < cut, "Female", "Male"), 
+                     levels = c("Female", "Male"))
+    F_meas(data = pred_y, reference = factor(training_set_13$sex, levels = c("Female", "Male")))
+  })
+  F1_values[, i] <- F1
+  optimal_cutoffs[i] <- cut[which.max(F1)]
+}
+plot(cut, F_1, type = "l")
+
+```
+
+14. Make a histogram of the $\theta$s that maximize accuracy in each iterations.
+
+```{r}
+set.seed(2024 - 04 - 8)
+
+x <- heights$height
+y <- heights$sex
+
+
+training_halves <- 1:250
+
+thetas <- seq(0.1, 0.95, 0.05)
+
+theta_values <- matrix(nrow = length(thetas), ncol = length(training_halves))
+optimal_thetas <- numeric(250)
+
+
+for (i in training_halves){
+  text_idx <- createDataPartition(y, times = 1, p = 0.5, list = FALSE)
+  training_set_14 <- heights[text_idx,]
+  test_set_14 <- heights[-text_idx,]
+  
+  glm_training_14 <- glm(factor(sex) ~ height, 
+                         data = training_set_14,
+                         family = binomial)
+
+  glm_pred_14 <- predict.glm(glm_training_14, newdata = test_set_14, type = "response")
+  
+  acc <- sapply(thetas, function(theta){
+    pred_y <- factor(ifelse(glm_pred_14 < theta, "Female", "Male"), 
+                     levels = c("Female", "Male"))
+    cm <- confusionMatrix(data = pred_y, 
+                          reference = test_set_14$sex, 
+                          positive = "Female")
+    cm$overall["Accuracy"]
+  })
+  
+  theta_values[, i] <- acc
+  optimal_thetas[i] <- thetas[which.max(acc)]
+}
+
+thetas[which.max(acc)]
+plot(thetas, acc, type = "l", main = "Accuracy - 250 iterations")
+
+
+```
+
+15. Repeat exercise 8 but this time splitting into 80% training 20% testing. How do the distributions compare?
+
+```{r}
+set.seed(2024 - 04 - 8)
+
+x <- heights$height
+y <- heights$sex
+
+
+text_idx <- createDataPartition(y, times = 1, p = 0.8, list = FALSE)
+
+training_set_15 <- heights[text_idx,]
+test_set_15 <- heights[-text_idx,]
+
+
+glm_training_15 <- glm(factor(sex) ~ height, 
+                       data = training_set_15, 
+                       family = binomial)
+
+# I got a warning msg trying to run the next command:  'Warning: 'newdata' had 209 rows but variables found have 841 rows'. Following this discussion (https://stackoverflow.com/questions/27464893/getting-warning-newdata-had-1-row-but-variables-found-have-32-rows-on-pred), I changed the formula and keep just the column names not 'datasetname$variablename' pattern. This solved the problem. 
+ 
+training_set_15 <- test_set_15
+glm_pred_15 <- predict.glm(glm_training_15, 
+                           newdata = test_set_15, 
+                           type = "response")
+
+par(mfrow = c(1, 2))
+plot(test_set$height, glm_pred, main = "Ex. 8")
+plot(test_set_15$height, glm_pred_15, main = "Ex. 15")
+
+
+```

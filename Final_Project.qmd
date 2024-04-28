@@ -1,0 +1,130 @@
+---
+title: "Final Project - ML201"
+author: "William Lautert"
+date: '2024-04-27'
+output:
+  pdf_document: default
+  html_document: default
+---
+
+### Load library
+
+```{r Library, include=FALSE}
+library(dslabs)
+library(parallel)
+library(doParallel)
+library(foreach)
+library(caret)
+library(matrixStats)
+library(umap)
+library(randomForest)
+library(MASS)
+library(fastTopics)
+```
+
+### Setup computer cores and parallel
+```{r setup, include=FALSE}
+
+nc <- detectCores()  - 1
+cl <- makeCluster(nc)
+registerDoParallel(cl)
+
+```
+
+
+1.  Data processing:
+    -   Load the dataset using the provided code.
+
+```{r}
+set.seed(2024-04-27)
+data("pbmc_facs", package = "fastTopics")
+
+#training set
+x <- as.matrix(pbmc_facs$counts)
+y <- pbmc_facs$samples$celltype
+
+#test set
+x_test <- as.matrix(pbmc_facs$counts_test)
+y_test <- pbmc_facs$samples_test$celltype
+
+
+
+#Summary of each dataset
+print("Dimension of 'Train matrix' (x):") 
+dim(x)
+paste("Length of 'Y categories' (y): ", length(y))
+
+print("Dimension of 'Test matrix' (x):")
+dim(x_test)
+
+paste("Length of 'Test Y categories' (y): ", length(y_test))
+
+```
+
+
+```{r}
+set.seed(2024-04-28)
+
+predict_cell_prob <- function(train_matrix, train_label, 
+                              test_matrix, 
+                              model = "rf", ..., K = 50) {
+  #Prepocessing training data.  
+  #Transform counts in counts per million 
+  cpm <- log2(train_matrix/rowSums(train_matrix)*10^6 + 1)
+  
+  #Build the preprocessing data using caret function
+  pre_process <- preProcess(cpm, method = c("pca","nzv"), 
+                            verbose = T, 
+                            pcaComp = 100)
+  control <- trainControl(method = "cv", number = 20, p = 0.9, allowParallel = TRUE)
+  
+  ##Train models
+  if (model == "rf") {#Randon Forest
+    print("Training (Fit) RF model")
+    fit_rf_train <- train(predict(pre_process, cpm), y = train_label, method = model,
+                          tuneGrid = data.frame(mtry = seq(5, 30, 3)),
+                          trControl = control)
+
+    fit_rf <- randomForest(predict(pre_process, cpm), train_label, 
+                           mtry = fit_rf_train$bestTune$mtry)
+
+    print("Predicting cell types using RF model")
+    prediction <- predict(fit_rf, 
+                          newdata = predict(pre_process, 
+                                            log2(test_matrix/rowSums(test_matrix)*10^6 + 1)),
+                          type = "prob")
+    
+  } else {
+    print("Training (Fit) kNN model")
+    k_values <- data.frame(k = seq(3, K, 2))
+
+    train_knn_pca <- train(predict(pre_process, cpm), y = train_label, method = model,
+                          tuneGrid = k_values,
+                          trControl = control)
+
+    print("Predicting cell types using kNN model")
+    prediction <- predict(train_knn_pca, 
+                          newdata = predict(pre_process, 
+                                            log2(test_matrix/rowSums(test_matrix)*10^6 + 1)),
+                          type = "prob")
+  }
+  
+  return(prediction)
+}
+
+#Training set
+x <- as.matrix(pbmc_facs$counts)
+y <- pbmc_facs$samples$celltype
+
+#test set
+x_test <- as.matrix(pbmc_facs$counts_test)
+y_test <- pbmc_facs$samples_test$celltype
+
+prediction_finalProject <- predict_cell_prob(train_matrix = x, train_label = y,
+                                            test_matrix = x_test, 
+                                            model = "rf", K = 40)
+
+print(prediction_finalProject)
+```
+
+

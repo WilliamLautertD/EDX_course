@@ -23,6 +23,7 @@ library(fastTopics)
 ```
 
 ### Setup computer cores and parallel
+
 ```{r setup, include=FALSE}
 
 nc <- detectCores() #- 1
@@ -31,8 +32,8 @@ registerDoParallel(cl)
 
 ```
 
-
 ### Load the dataset
+
 ```{r}
 set.seed(2024-04-27)
 data("pbmc_facs", package = "fastTopics")
@@ -60,6 +61,7 @@ paste("Length of 'Test Y categories' (y): ", length(y_test))
 ```
 
 ### Final project function
+
 ```{r}
 set.seed(2024-04-28)
 
@@ -110,21 +112,16 @@ predict_cell_prob <- function(train_matrix, train_label,
     print("Prediction using kNN model done!")
   }
   
-  
-  #Get the accuracy and confusion matrix
-  acc <- confusionMatrix(prediction, factor(test_label))$overall["Accuracy"]
-  conf_matrix <- confusionMatrix(prediction, factor(test_label))
-  #Return both values as list
-  return(list(accuracy = acc, confusion_matrix = conf_matrix))
+  return(prediction)
 
 }
 
 ```
 
-
 ### Final project function testing
+
 ```{r}
-set.seed(2024-04-30)
+
 #Training set
 x <- as.matrix(pbmc_facs$counts)
 y <- pbmc_facs$samples$celltype
@@ -134,15 +131,17 @@ x_test <- as.matrix(pbmc_facs$counts_test)
 y_test <- pbmc_facs$samples_test$celltype
 
 prediction_finalProject <- predict_cell_prob(train_matrix = x, train_label = y,
-                                            test_matrix = x_test, test_label = y_test,
+                                            test_matrix = x_test,
                                             model = "rf")
 
+#Get the accuracy and confusion matrix
+acc <- confusionMatrix(prediction_finalProject, factor(y_test))$overall["Accuracy"]
+conf_matrix <- confusionMatrix(prediction_finalProject, factor(y_test))
+#Return both values as list
+acc_cmatrix <- list(accuracy = acc, confusion_matrix = conf_matrix)
 
 ```
+
 ### Final project function explanation
 
-The function 'predict_cell_prob' predicts the cell type of single data. It preprocesses the training data, trains either a Random Forest or kNN classifier based on the specified model ('response', 'prob', 'vote'), and predicts probabilities for the test data. The function arguments are composed by 7 obligatory arguments (train_matrix, train_label, test_matrix, test_label, model = "rf", and out = "response") and 1 optional argument with a default value of 50 (K = 50). The first two arguments, 'train_matrix' and 'train_label', input gene expression values matrix and name vector used to train the ML model. Then, the arguments 'test_matrix' and 'test_label' are input  gene expression values matrix and name vector used to test the model and predict cell types. The 'model' parameter selects for which ML methods use, either Random Forest ('rf') or k-Nearest Neighbor ('knn'), with 'rf' as default option. Then, the user can choose the final output using the 'out' variable, which either "class", "prob" or "raw" to produce the predicted class, class probabilities or the raw model scores, respectively. The K argument is used in kNN classifications and defines values of K for classification. The final output returns both the accuracy and the confusion matrix as a list. The first element is a "numeric" value showing the final accuracy of the ML model, while the second element is "confusionMatrix" class showing the final statistics related to the selected ML model.  
-
-
-
-
+The function *'predict_cell_prob* predicts the cell type of single data. It preprocesses the training data, trains either a Random Forest or kNN classifier based on the specified model ('response', 'prob', 'vote'), and predicts probabilities for the test data. The function arguments are composed by 7 obligatory arguments (train_matrix, train_label, test_matrix, test_label, model = "rf", and out = "response") and 1 optional argument with a default value of 50 (K = 50). The first two arguments, 'train_matrix' and 'train_label', input gene expression values matrix and name vector used to train the ML model. Then, the argument 'test_matrix' is the input gene expression values matrix used to test the model and predict cell types. The 'model' parameter selects for which ML methods use, either Random Forest ('rf') or k-Nearest Neighbor ('knn'), with 'rf' as default option. Then, the user can choose the final output using the 'out' variable, which either "class", "prob" or "raw" to produce the predicted class, class probabilities or the raw model scores, respectively. The K argument is used in kNN classifications and defines values of K for classification. The final output returns both the accuracy and the confusion matrix as a list. The first element is a "numeric" value showing the final accuracy of the ML model, while the second element is "confusionMatrix" class showing the final statistics related to the selected ML model.  

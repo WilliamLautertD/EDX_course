@@ -3,7 +3,7 @@
 **Instructions**
 
 **Task:**
-input a named vector gene expression values and predicts what call type it is. 
+input a named vector gene expression values and predicts what cell type it is. 
 Optionally, provide a probability for each of the 10 possible cell types. 
 
 **Dataset:**
